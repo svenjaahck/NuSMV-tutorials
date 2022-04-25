@@ -1,0 +1,61 @@
+MODULE main -- The vending machine's MVP is this one module
+VAR
+  choice:  boolean; -- Toggle for costumer having made a choice or not
+  payment: boolean; -- The costumer has payed
+  acc_payment: boolean; -- Can accept payment (every condition is fullfilled)
+  n_items: 0..3; -- initiated a numerical value -- Stock counter of the item in store.
+  state:   { ready, expect_payment, dispense_item };
+
+ASSIGN
+  init (state) := ready; -- The machine is ready for a costumer at its initial state.
+  next (state) := case
+		    state = ready          & choice:  expect_payment; -- If the vending machine is ready and a costumer has made a choice, we expect the payment
+		    state = expect_payment & acc_payment: dispense_item; -- When the payment is accepted of what we expect, we drop the item.
+		    state = expect_payment & !choice: ready; -- If the costumer regrets his choice, go back to the vending machines initial state
+		    state = dispense_item:	      ready; -- Go back to initial state when item has been dispensed.
+		    TRUE:                             state;
+  esac;
+
+  init (acc_payment) := FALSE; -- Can't accept payment at start before knowing what the costumer wants and what amount to pay.
+  next (acc_payment) := (state = expect_payment & payment & choice & n_items > 0); -- Will only accept payment if a choice is made, payment is complete and there exists at least one ofthe item in stock.
+  -- Can't acc_payment if there is no item to choose from
+
+  next (n_items) := case
+    release_item & n_items > 0 : n_items - 1; -- had to add n_items > 0 here as well for it to compile.
+    -- We thought it would be enough to have this conditional check once, but apparently not
+    TRUE: n_items;
+  esac;
+
+DEFINE
+  release_item := (state = dispense_item);
+
+LTLSPEC
+  G(acc_payment -> F release_item);
+
+-- specification  G (acc_payment ->  F release_item)  is false
+-- as demonstrated by the following execution sequence
+-- Trace Description: LTL Counterexample
+-- Trace Type: Counterexample
+--  -> State: 1.1 <-
+--    choice = FALSE
+--    payment = FALSE
+--    acc_payment = FALSE // Initiated as false
+--    state = ready // Initiated as true
+--    release_item = FALSE // False because state != dispense_item
+--  -> State: 1.2 <-
+--    choice = TRUE // Choice is toggled, nothing happens
+--  -> State: 1.3 <-
+--    choice = FALSE // is toggled again back to false.
+--    payment = TRUE // is toggled to TRUE. Costumer has
+--    state = expect_payment // Because choice == True in 1.2 and state == ready,
+--          we continue to state expect_payment
+--  -> State: 1.4 <-
+--    payment = FALSE // toggled to false
+--    acc_payment = TRUE // set to true because state == expect_payment from 1.3 and payment = TRUE from 1.3
+--    state = ready //Because choice == false from 1.3 and state == expect_payment from 1.3, we are placed in ready.
+--  -- Loop starts here
+--  -> State: 1.5 <-
+--  -> State: 1.6 <-
+--    acc_payment = FALSE
+-- // Because acc_payment was never affected by having made a choice or not we could toggle the variables to never step into
+-- dispense_item state. Adding & choice in acc_payment solved the counterexamples.
